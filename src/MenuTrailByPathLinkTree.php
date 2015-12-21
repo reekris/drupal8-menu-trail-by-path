@@ -41,23 +41,25 @@ class MenuTrailByPathLinkTree extends MenuLinkTree {
     $items = parent::buildItems($tree, $tree_access_cacheability, $tree_link_cacheability);
     $alias = $this->getCurrentPathAlias();
     $active = FALSE;
+    $active_key = '';
+
     foreach ($items as $key => $item) {
       $item_path = $item['url']->toString();
+
       // If this items path exists in the current path.
       if (strpos($alias, $item_path) === 0) {
-        // If an active item is already found, compare this item with the one found.
-        if ($active && $this->getSimilarityWithCurrentPath($item_path) > $this->getSimilarityWithCurrentPath($active['url']->toString())) {
-          $active = $item;
-        }
-        else if (!$active) {
+        if ($this->pathIsMoreSimilar($item_path, $active)) {
+          $active_key = $key;
           $active = $item;
         }
       }
     }
+
     // If an item was found, set the active trail class.
     if ($active) {
-      $active['attributes']['class'][] = 'menu-item--active-trail';
+      $items[$active_key]['attributes']->addClass('menu-item--active-trail');
     }
+
     return $items;
   }
 
@@ -90,4 +92,28 @@ class MenuTrailByPathLinkTree extends MenuLinkTree {
     return $key;
   }
 
+  /**
+   * Check whether a path is more similar than the current active item.
+   *
+   * @param string $item_path
+   *   The path to compare.
+   * @param array $active
+   *   The currently active menu link element.
+   *
+   * @return bool
+   *   TRUE if the path being compared is more similar.
+   */
+  private function pathIsMoreSimilar($item_path, $active) {
+
+    // There is no currently active path, so
+    if (empty($active)) {
+      return TRUE;
+    }
+
+    if ($this->getSimilarityWithCurrentPath($item_path) > $this->getSimilarityWithCurrentPath($active['url']->toString())) {
+      return TRUE;
+    }
+
+    return FALSE;
+  }
 }
