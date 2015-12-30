@@ -17,8 +17,8 @@ class MenuTrailByPathServiceProvider extends ServiceProviderBase {
    * {@inheritdoc}
    */
   public function alter(ContainerBuilder $container) {
-    $definition = $container->getDefinition('menu.link_tree');
-    $definition->setClass('Drupal\menu_trail_by_path\MenuTrailByPathLinkTree');
+    $definition = $container->getDefinition('menu.active_trail');
+    $definition->setClass('Drupal\menu_trail_by_path\MenuTrailByPathActiveTrail');
   }
 
 }
