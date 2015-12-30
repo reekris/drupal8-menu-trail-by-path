@@ -8,11 +8,36 @@ namespace Drupal\menu_trail_by_path;
 
 use Drupal\Core\Menu\MenuActiveTrail;
 use Drupal\Core\Menu\MenuTreeParameters;
+use Drupal\Core\Menu\MenuLinkManagerInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Cache\CacheBackendInterface;
+use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Path\CurrentPathStack;
+use Drupal\Core\Path\AliasManagerInterface;
 
 /**
  * Overrides the class for the file entity normalizer from HAL.
  */
 class MenuTrailByPathActiveTrail extends MenuActiveTrail {
+
+  /**
+   * Constructs a Drupal\menu_trail_by_path\MenuTrailByPathLinkTree object.
+   *
+   * @param \Drupal\Core\Menu\MenuLinkManagerInterface $menu_link_manager
+   * @param \Drupal\Core\Routing\RouteMatchInterface $route_match
+   * @param \Drupal\Core\Cache\CacheBackendInterface $cache
+   * @param \Drupal\Core\Lock\LockBackendInterface $lock
+   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
+   * @param \Drupal\Core\Path\CurrentPathStack $current_path_stack
+   * @param \Drupal\Core\Path\AliasManagerInterface $alias_manager
+   */
+  public function __construct(MenuLinkManagerInterface $menu_link_manager, RouteMatchInterface $route_match, CacheBackendInterface $cache, LockBackendInterface $lock, LanguageManagerInterface $language_manager, CurrentPathStack $current_path_stack, AliasManagerInterface $alias_manager) {
+    parent::__construct($menu_link_manager, $route_match, $cache, $lock);
+    $this->language_manager = $language_manager;
+    $this->current_path_stack = $current_path_stack;
+    $this->alias_manager = $alias_manager;
+  }
 
   /**
    * Helper method for ::getActiveTrailIds().
@@ -42,7 +67,7 @@ class MenuTrailByPathActiveTrail extends MenuActiveTrail {
 
         // Check if this item's path exists in the current path.
         // Also check if there is a langcode prefix.
-        $lang_prefix = '/' . \Drupal::languageManager()->getCurrentLanguage()->getId();
+        $lang_prefix = '/' . $this->language_manager->getCurrentLanguage()->getId();
         if (strpos($path, $menu_path) === 0 || strpos($lang_prefix . $path, $menu_path) === 0) {
           if ($this->pathIsMoreSimilar($path, $menu_path)) {
             $parents = array($menu_link_route => $menu_link_route);
@@ -62,8 +87,8 @@ class MenuTrailByPathActiveTrail extends MenuActiveTrail {
    *   The path alias for the current path.
    */
   private function getCurrentPathAlias() {
-    $path = \Drupal::service('path.current')->getPath();
-    return \Drupal::service('path.alias_manager')->getAliasByPath('/' . trim($path, '/'));
+    $path = $this->current_path_stack->getPath();
+    return $this->alias_manager->getAliasByPath('/' . trim($path, '/'));
   }
 
   /**
