@@ -12,9 +12,8 @@ use Drupal\Core\Menu\MenuLinkManagerInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Lock\LockBackendInterface;
-use Drupal\Core\Language\LanguageManagerInterface;
-use Drupal\Core\Path\CurrentPathStack;
-use Drupal\Core\Path\AliasManagerInterface;
+use Drupal\Core\Breadcrumb\BreadcrumbBuilderInterface;
+use Drupal\Core\Url;
 
 /**
  * Overrides the class for the file entity normalizer from HAL.
@@ -28,15 +27,11 @@ class MenuTrailByPathActiveTrail extends MenuActiveTrail {
    * @param \Drupal\Core\Routing\RouteMatchInterface $route_match
    * @param \Drupal\Core\Cache\CacheBackendInterface $cache
    * @param \Drupal\Core\Lock\LockBackendInterface $lock
-   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
-   * @param \Drupal\Core\Path\CurrentPathStack $current_path_stack
-   * @param \Drupal\Core\Path\AliasManagerInterface $alias_manager
+   * @param \Drupal\Core\Breadcrumb\BreadcrumbBuilderInterface $breadcrumb_builder
    */
-  public function __construct(MenuLinkManagerInterface $menu_link_manager, RouteMatchInterface $route_match, CacheBackendInterface $cache, LockBackendInterface $lock, LanguageManagerInterface $language_manager, CurrentPathStack $current_path_stack, AliasManagerInterface $alias_manager) {
+  public function __construct(MenuLinkManagerInterface $menu_link_manager, RouteMatchInterface $route_match, CacheBackendInterface $cache, LockBackendInterface $lock, BreadcrumbBuilderInterface $breadcrumb_builder) {
     parent::__construct($menu_link_manager, $route_match, $cache, $lock);
-    $this->language_manager = $language_manager;
-    $this->current_path_stack = $current_path_stack;
-    $this->alias_manager = $alias_manager;
+    $this->breadcrumbBuilder = $breadcrumb_builder;
   }
 
   /**
@@ -55,22 +50,15 @@ class MenuTrailByPathActiveTrail extends MenuActiveTrail {
       }
     }
     else {
-      // No matching link, so check paths against current link.
-      $path = $this->getCurrentPathAlias();
+      // Try to get active trail from breadcrumbs (which uses path internally)
+      $breadcrumbs = $this->breadcrumbBuilder->build($this->routeMatch);
+      $links = $breadcrumbs->getLinks();
+      if (!empty($links)) {
+        $lastLink = end($links);
+        $url = $lastLink->getUrl();
 
-      $menu_parameters = new MenuTreeParameters();
-      $tree = \Drupal::menuTree()->load($menu_name, $menu_parameters);
-
-      foreach ($tree as $menu_link_route => $menu_link) {
-        $menu_url = $menu_link->link->getUrlObject();
-        $menu_path = $menu_url->toString();
-
-        // Check if this item's path exists in the current path.
-        // Also check if there is a langcode prefix.
-        $lang_prefix = '/' . $this->language_manager->getCurrentLanguage()->getId();
-        if (strpos($path, $menu_path) === 0 || strpos($lang_prefix . $path, $menu_path) === 0) {
-          if ($this->pathIsMoreSimilar($path, $menu_path)) {
-            $parents = array($menu_link_route => $menu_link_route);
+        if ($active_link = $this->getActiveLinkByUrl($url, $menu_name)) {
+          if ($parents = $this->menuLinkManager->getParentIds($active_link->getPluginId())) {
             $active_trail = $parents + $active_trail;
           }
         }
@@ -81,56 +69,27 @@ class MenuTrailByPathActiveTrail extends MenuActiveTrail {
   }
 
   /**
-   * Get the path alias for the current path.
+   * Fetches a menu link which matches
+   * the route name and parameters of the url object and menu name.
    *
-   * @return string
-   *   The path alias for the current path.
+   * @param \Drupal\Core\Url $url
+   *   The url object to use to find the active link.
+   *
+   * @param string|NULL $menu_name
+   *   (optional) The menu within which to find the active link. If omitted, all
+   *   menus will be searched.
+   *
+   * @return \Drupal\Core\Menu\MenuLinkInterface|NULL
+   *   The menu link for the given route name, parameters and menu, or NULL if
+   *   there is no matching menu link or the current user cannot access the
+   *   current page (i.e. we have a 403 response).
    */
-  private function getCurrentPathAlias() {
-    $path = $this->current_path_stack->getPath();
-    return $this->alias_manager->getAliasByPath('/' . trim($path, '/'));
-  }
-
-  /**
-   * Compare the similarity of the current path alias with a path provided.
-   *
-   * @param string $path
-   *   The path to compare with.
-   *
-   * @return int
-   *   The number of characters in common from the beginning.
-   */
-  private function getSimilarityWithCurrentPath($path) {
-    $alias = $this->getCurrentPathAlias();
-    // In case of identity the similarity is trivial.
-    if ($path === $alias) {
-      return strlen($path);
+  public function getActiveLinkByUrl(Url $url, $menu_name = NULL) {
+    $found = NULL;
+    $links = $this->menuLinkManager->loadLinksByRoute($url->getRouteName(), $url->getRouteParameters(), $menu_name);
+    if ($links) {
+      $found = reset($links);
     }
-    else {
-      $key = 0;
-      while (isset($alias[$key]) && isset($path[$key]) && $alias[$key] === $path[$key]) {
-        $key++;
-      }
-      return $key;
-    }
-  }
-
-  /**
-   * Check whether a path is more similar than the current active item.
-   *
-   * @param string $item_path
-   *   The path to compare.
-   * @param array $active
-   *   The currently active menu link element.
-   *
-   * @return bool
-   *   TRUE if the path being compared is more similar.
-   */
-  private function pathIsMoreSimilar($item_path, $active) {
-    // If there is no active menu path or compared path is a better match than active menu path
-    if (empty($active) || $this->getSimilarityWithCurrentPath($item_path) > $this->getSimilarityWithCurrentPath($active)) {
-      return TRUE;
-    }
-    return FALSE;
+    return $found;
   }
 }
